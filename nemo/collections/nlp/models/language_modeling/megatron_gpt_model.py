@@ -93,8 +93,7 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         self.megatron_amp_o2 = cfg.get('megatron_amp_O2', False)
 
         # Rulin: need to support virtual pp when disable both megatron_amp_o2 and transformer_engine
-        if not self.megatron_amp_o2 and self.cfg.get('virtual_pipeline_model_parallel_size', None):
-            if cfg.get('transformer_engine', False):
+        if not self.megatron_amp_o2 and self.cfg.get('virtual_pipeline_model_parallel_size', None) and cfg.get('transformer_engine', False):
                 raise ValueError('Virtual pipeline model parallel is only supported when using megatron_amp_O2')
 
         # build_model returns a list of modules which are used for interleaved pipeline parallelism
@@ -936,7 +935,10 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         if isinstance(self.model, list):
             for i in range(len(self.model)):
                 parallel_state.set_virtual_pipeline_model_parallel_rank(i)
-                checkpoint[f'model{i}'] = self.model[i].module.state_dict_for_save_checkpoint()
+                if not self.cfg.get('transformer_engine', False) and not self.cfg.get('megatron_amp_O2', 'False'):
+                    checkpoint[f'model{i}'] = self.model[i].state_dict_for_save_checkpoint()
+                else:
+                    checkpoint[f'model{i}'] = self.model[i].module.state_dict_for_save_checkpoint()
             parallel_state.set_virtual_pipeline_model_parallel_rank(0)
 
     def on_load_checkpoint(self, checkpoint) -> None:
@@ -946,7 +948,10 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         if isinstance(self.model, list):
             for i in range(len(self.model)):
                 parallel_state.set_virtual_pipeline_model_parallel_rank(i)
-                self.model[i].module.load_state_dict(checkpoint[f'model{i}'], strict=True)
+                if not self.cfg.get('transformer_engine', False) and not self.cfg.get('megatron_amp_O2', 'False'):
+                    self.model[i].load_state_dict(checkpoint[f'model{i}'], strict=True)
+                else:
+                    self.model[i].module.load_state_dict(checkpoint[f'model{i}'], strict=True)
             parallel_state.set_virtual_pipeline_model_parallel_rank(0)
 
     def parameters(self):
